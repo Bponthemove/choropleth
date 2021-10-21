@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3-scale@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3-axis@3"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-geo/0.0.1/d3-geo.js"></script>
+
+    <style>
+        body, html {
+            display: flex;
+            justify-content: center;
+            
+        }
+
+        .svg-container {
+            background-color: beige;
+        }
+
+        #title {
+            font-size: 2.5em;
+        }
+
+        #description {
+            font-size: 1.1em;
+        }   
+        
+        #tooltip {
+            position: absolute;
+            background-color:black;
+            color: whitesmoke;
+            opacity: 0;
+            border: 0px;
+            border-radius: 6px;
+            width: fit-content;
+            height: fit-content;
+            font-size: 0.9em;
+            padding: 5px 10px;
+        }
+        
+        .legendRect {
+            width: 40px;
+            height: 20px;
+        }
+
+    </style>
+</head>
+<body>
+    <script>
+        'use strict'
+
+        async function getData() {
+
+            //retrieving data
+            const educationData = await d3.json('https://cdn.freecodecamp.org/testable-projects-fcc/data/choropleth_map/for_user_education.json')
+            const countyData = await d3.json('https://cdn.freecodecamp.org/testable-projects-fcc/data/choropleth_map/counties.json')
+            
+            //back to geojson
+            const counties = topojson.feature(countyData, countyData.objects.counties)
+            const states = topojson.feature(countyData, countyData.objects.states, (a, b) => a !== b)
+            const nation = topojson.feature(countyData, countyData.objects.nation)
+
+            const minMax = d3.extent(educationData, data => data.bachelorsOrHigher)
+            console.log(minMax);
+
+            //standard svg settings
+            const margin = {top: 100, right: 30, bottom: 60, left: 100}
+            const w = 1200 - margin.left - margin.right
+            const h = 1000 - margin.top - margin.bottom
+
+            const colors = ['#A3E0F0', '#99CEEF', '#8FBBED', '#85A9EC', '#7B96EA']
+
+            const toolTip = d3.select('body')
+                .append('div')
+                .attr('id', 'tooltip')
+
+            const container = d3.select('body')
+                .append('svg')
+                .attr('class', 'svg-container')
+                .attr('width', w + margin.left + margin.right)
+                .attr('height', h + margin.top + margin.bottom)
+
+            //labels
+            container.append('text')
+                .text('United States Educational Attainment')
+                .attr('id', 'title')
+                .attr('transform', `translate(${(w + margin.left + margin.right) / 2}, ${margin.top / 2})`)
+                .attr('text-anchor', 'middle')
+
+            container.append('text')
+                .text("Percentage of adults age 25 and older with a bachelor's degree or higher (2010-2014)")
+                .attr('id', 'description')
+                .attr('transform', `translate(${(w + margin.left + margin.right) / 2}, ${margin.top / 2 + 40})`)
+                .attr('text-anchor', 'middle')
+
+            const svg = container.append('svg')
+                .attr('class', 'svg')
+                .attr('width', w)
+                .attr('height', h)
+                .attr('x', margin.left)
+                .attr('y', margin.top)
+
+            //creating legend based on colors array
+            const colorScale = d3.scaleLinear()
+                .domain(minMax)
+                .range([0, 200])
+
+            const xAxis = d3.axisBottom(colorScale)
+                .ticks(7)
+                .tickSizeOuter(0)
+
+            const legend = container.append('g')
+                .attr('id', 'legend')
+            
+            legend.selectAll('rect')
+                .data(colors)
+                .enter()
+                .append('rect')
+                .attr('class', 'legendRect')
+                .attr('fill', (d, i) => colors[i])
+                .attr('x', (d, i) => margin.left + 40*i)
+                .attr('y', h - (margin.bottom / 2))
+
+            container.append('g')
+                .call(xAxis)
+                .attr('transform', `translate(${margin.left}, ${h - margin.bottom / 2 + 20})`)
+
+            container.append('text')
+                .text('% of adults aged 25 and over')
+                .attr('x', margin.left)
+                .attr('y', `${h + 20 + (margin.bottom / 2)}`)                
+                .style('font-size', '0.8em')
+
+            //creating and rendering geopath
+            const path = d3.geoPath()
+
+            svg.selectAll('path')
+                .data(counties.features)
+                .enter()
+                .append('path')
+                .attr('d', path)
+                .attr('transform', `scale(1.1, 1.1)`)
+                .attr('class', 'county')
+                .attr('data-fips', d => d.id)
+                .attr('data-education', d => educationData.find(x => x.fips === d.id).bachelorsOrHigher)
+                .attr('fill', d => chooseColor(d.id))
+                .on('mouseover', function(e) {
+                    const county = d3.select(this)
+                    county.attr('fill', 'black')
+                    toolTip.style('opacity', 0.9)
+                        .attr('data-education', e.target.attributes[4].value)
+                        .style('left', `${e.clientX + 40}px`)
+                        .style('top', `${e.clientY}px`)
+                    toolTip.html(`${educationData.find(x => x.fips === parseInt(e.target.attributes[3].value)).area_name} in ${educationData.find(x => x.fips === parseInt(e.target.attributes[3].value)).state}: ${e.target.attributes[4].value}`)
+                })
+                .on('mouseout', function(e) {
+                    const county = d3.select(this)
+                    toolTip.style('opacity', 0)
+                    county.attr('fill', chooseColor(parseInt(this.attributes[3].value)))
+                })
+            
+            //creating and rendering additional states and nation paths
+            svg.append('path')
+                .datum(states)
+                .attr('fill', 'none')
+                .attr('stroke', 'gray')
+                .attr('transform', `scale(1.1, 1.1)`)
+                .attr('d', path)
+
+            svg.append('path')
+                .datum(nation)
+                .attr('fill', 'none')
+                .attr('stroke', 'darkgray')
+                .attr('transform', `scale(1.1, 1.1)`)
+                .attr('d', path)
+
+            function chooseColor(d) {
+                if (educationData.find(x => x.fips === d).bachelorsOrHigher < 12.5) {
+                        return colors[0]
+                    }
+                    if (educationData.find(x => x.fips === d).bachelorsOrHigher >= 12.5 && educationData.find(x => x.fips === d).bachelorsOrHigher < 25) {
+                        return colors[1]
+                    }
+                    if (educationData.find(x => x.fips === d).bachelorsOrHigher >= 25 && educationData.find(x => x.fips === d).bachelorsOrHigher < 37.5) {
+                        return colors[2]
+                    }
+                    if (educationData.find(x => x.fips === d).bachelorsOrHigher >= 37.5 && educationData.find(x => x.fips === d).bachelorsOrHigher < 50) {
+                        return colors[3]
+                    }
+                    if (educationData.find(x => x.fips === d).bachelorsOrHigher >= 50) {
+                        return colors[4]
+                    }
+            }
+
+        }
+
+        getData()
+
+
+    </script>
+    <script src="https://cdn.freecodecamp.org/testable-projects-fcc/v1/bundle.js"></script>
+    
+</body>
+</html>
